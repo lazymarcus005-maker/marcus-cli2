@@ -3,6 +3,7 @@ models:
   default: primary
   providers:
     private_gateway:
+      # Use openai-compatible for /chat/completions; use openai-responses for /responses.
       protocol: openai-compatible
       base_url: ${MACUS_MODEL_BASE_URL}
       api_key_env: MACUS_MODEL_API_KEY
@@ -22,6 +23,7 @@ internal_models:
     transport: openrouter
     model: typesafe/jev-1.13
     api_key_env: OPENROUTER_API_KEY
+    # For the direct TypeSafe API, set transport: typesafe; its default model/key env are jev-latest / TYPESAFE_API_KEY.
     timeout_ms: 1500
     max_state_tokens: 8000
     mode: shadow

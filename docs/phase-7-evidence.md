@@ -6,13 +6,19 @@ Status: **implementation hardening complete locally; production V1 release gate 
 
 - macOS arm64 on Apple M4 Pro / 48 GiB.
 - Node 22.19.0 target-runtime CLI launch.
-- npm typecheck/lint/build pass.
-- Vitest: 118 passed tests + 1 live-only skipped test across 70 files pass on both the current runtime and Node 22.19.0.
-- npm audit: 0 known vulnerabilities.
-- npm package dry-run and clean tarball installation pass.
-- clean-installed package launches macus --help.
+- npm typecheck, lint and build pass on Node 22.19.0 after the architecture improvements.
+- Vitest: 134 passed tests + 1 live-only skipped test across 76 files pass on Node 22.19.0.
+- Current clean dependency install: 228 packages installed; `npm audit --audit-level=low` found 0 vulnerabilities.
+- Current tarball installation passed `macus --help` and `macus --json` status startup from a separate install prefix; its executable has the Node shebang.
+- Installed tarball E2E against a local OpenAI-compatible endpoint passed end to end: provider tool call, fixture `npm test`, fresh passing trusted evidence, exit 0.
+- TypeSafe direct live test passed with `jev-latest`, resolved as `jev-1.13.0`, returning a schema-valid Noul response.
+- Installed-package CLI E2E with live TypeSafe Jev recorded a successful shadow failure-triage event (`typesafe`, `jev-1.13.0`, 827 ms) while the primary model used a local fixture server.
+- OpenRouter live test remains unrun because `OPENROUTER_API_KEY` is unset.
+- Live OpenCode Go `deepseek-v4-flash-vision-exp` run returned a response and edited a disposable Git fixture; its `npm test` passed. Macus recorded verification evidence as `unknown` and exited 3, so the live coding E2E is only partially passing.
 - CI workflow defines Ubuntu + macOS Node 22.19.0 matrix.
 - Pi nested tool-turn/request interception integration passes against deterministic mock endpoint.
+- Provider runtime, durable continuity, verification assessment, typed tool-result coordination and CLI application boundary tests pass.
+- CLI end-to-end tests pass for unverified workspace edits returning exit 3 and a trusted `run_command` test recording fresh passing evidence.
 - effective context stale-source replacement integration passes.
 - durable session resume integration passes.
 - compaction cancellation integration passes.
@@ -28,9 +34,9 @@ Status: **implementation hardening complete locally; production V1 release gate 
 
 ## External or policy-dependent release blockers
 
-1. **Live external provider compatibility:** the tunnel environment does not expose a configured MACUS model endpoint/key, so real-provider compatibility is not claimed.
+1. **Live external provider compatibility:** TypeSafe direct Jev passed a live provider test. The OpenCode Go provider still needs a fresh live test after the latest changes; the earlier call completed a coding response but Macus reported `unknown` test evidence (exit 3). OpenRouter Jev remains untested in this run.
 2. **Linux execution result:** CI configuration exists, but no Linux runner result is observable from this session.
-3. **Full real-model paired coding benchmark:** cannot be run without a live configured endpoint; no token/quality improvement claim is made.
+3. **Full real-model paired coding benchmark:** no comparative correctness/token/latency benchmark has been recorded.
 4. **Project license:** Macus Code's own publication license has not been selected by the user. Third-party notices are present.
 5. **60-second idle CPU release measurement:** benchmark support exists, but the specific 60-second reference observation has not been recorded.
 

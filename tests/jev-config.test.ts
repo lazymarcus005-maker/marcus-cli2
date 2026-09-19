@@ -19,6 +19,16 @@ describe("Jev configuration authority",()=>{
     expect(()=>validateConfig(c)).toThrow(/only.*shadow/i);
   });
 
+  it("uses TypeSafe direct model and credential defaults when that transport is selected",async()=>{
+    const root=await mkdtemp(path.join(os.tmpdir(),"macus-typesafe-defaults-"));
+    const global=path.join(root,"global.yaml");
+    await writeFile(global,"schema_version: 1\ninternal_models:\n  jev:\n    transport: typesafe\n");
+    const loaded=await loadConfig(root,global);
+    expect(loaded.config.internal_models.jev.model).toBe("jev-latest");
+    expect(loaded.config.internal_models.jev.api_key_env).toBe("TYPESAFE_API_KEY");
+    await rm(root,{recursive:true,force:true});
+  });
+
   it("project config cannot enable or reconfigure Jev but may disable it",async()=>{
     const root=await mkdtemp(path.join(os.tmpdir(),"macus-jev-config-"));await mkdir(path.join(root,".macus"),{recursive:true});
     const global=path.join(root,"global.yaml");process.env.MACUS_TEST_JEV_KEY="secret";

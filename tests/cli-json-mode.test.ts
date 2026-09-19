@@ -1,9 +1,10 @@
 import { describe,it,expect } from "vitest";
 import http from "node:http";
-import { mkdtemp,writeFile,rm } from "node:fs/promises";
+import { mkdtemp,writeFile,readFile,rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { fileHash } from "../src/utils.js";
 
 function sse(res:http.ServerResponse,chunks:unknown[]){
   res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache"});
@@ -84,6 +85,59 @@ describe("CLI JSON mode",()=>{
     expect(result.code).toBe(3);
     const parsed=JSON.parse(result.stdout);
     expect(parsed.status).toBe("completed");expect(parsed.evidence[0].status).toBe("failed");
+    await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});
+  },15000);
+
+  it("uses exit code 3 when a completed run edits workspace files without fresh passing evidence",async()=>{
+    const root=await mkdtemp(path.join(os.tmpdir(),"macus-json-unverified-edit-"));
+    const source=path.join(root,"app.mjs");
+    await writeFile(source,"export const value = 1;\n");
+    const expectedHash=(await fileHash(source))!;
+    let calls=0;
+    const server=http.createServer(async(_req,res)=>{
+      for await(const _ of _req){};calls++;
+      if(calls===1){
+        sse(res,[
+          {id:"c1",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{role:"assistant",tool_calls:[{index:0,id:"write_1",type:"function",function:{name:"write_file",arguments:JSON.stringify({path:"app.mjs",content:"export const value = 2;\n",expectedHash})}}]},finish_reason:null}]},
+          {id:"c1",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{},finish_reason:"tool_calls"}]},
+        ]);
+      }else{
+        sse(res,[{id:"c2",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{role:"assistant",content:"done"},finish_reason:"stop"}]}]);
+      }
+    });
+    await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));const port=(server.address() as any).port;
+    const config=path.join(root,"global.yaml");await writeFile(config,configYaml(port));
+    const result=await run(root,["--config",config,"--authorize","edits","--json","change the value"],{MACUS_TEST_KEY:"secret"});
+    expect(result.code).toBe(3);
+    const parsed=JSON.parse(result.stdout);
+    expect(parsed.status).toBe("completed");
+    expect(parsed.evidence).toEqual([]);
+    expect(await readFile(source,"utf8")).toContain("value = 2");
+    await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});
+  },15000);
+
+  it("records fresh evidence when a trusted test runs through run_command",async()=>{
+    const root=await mkdtemp(path.join(os.tmpdir(),"macus-json-trusted-command-"));
+    await writeFile(path.join(root,"package.json"),JSON.stringify({scripts:{test:"node -e \"console.log('Tests 1 passed')\""}},null,2));
+    let calls=0;
+    const server=http.createServer(async(req,res)=>{
+      for await(const _ of req){};calls++;
+      if(calls===1){
+        sse(res,[
+          {id:"c1",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{role:"assistant",tool_calls:[{index:0,id:"shell_1",type:"function",function:{name:"run_command",arguments:JSON.stringify({command:"npm test"})}}]},finish_reason:null}]},
+          {id:"c1",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{},finish_reason:"tool_calls"}]},
+        ]);
+      }else{
+        sse(res,[{id:"c2",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{role:"assistant",content:"tests passed"},finish_reason:"stop"}]}]);
+      }
+    });
+    await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));const port=(server.address() as any).port;
+    const config=path.join(root,"global.yaml");await writeFile(config,configYaml(port));
+    const result=await run(root,["--config",config,"--authorize","shell","--json","run the tests"],{MACUS_TEST_KEY:"secret"});
+    expect(result.code).toBe(0);
+    const parsed=JSON.parse(result.stdout);
+    expect(parsed.evidence[0].status).toBe("passed");
+    expect(parsed.evidence[0].detail.trustedCommand).toBe(true);
     await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});
   },15000);
 

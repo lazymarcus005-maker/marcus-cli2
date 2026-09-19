@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { StateStore } from "../storage/state.js";
-import { PolicyExecutor } from "../policy.js";
+import { PolicyExecutor, type CommandResult } from "../policy.js";
 import { id, nowIso } from "../utils.js";
 import { PathPolicy } from "../path-policy.js";
 import { classifyTestCommand, trustedSnapshotDigest } from "./discovery.js";
@@ -111,10 +111,15 @@ async function reportState(file:string|undefined):Promise<{exists:boolean;mtimeM
   }catch{return {exists:false};}
 }
 
-export async function runTest(args:{
+interface VerificationExecutionArgs {
   root:string;sessionId:string;runId?:string;toolCallId?:string;command:string;executor:PolicyExecutor;store:StateStore;
   reportPath?:string;reportFormat?:"junit"|"trx"; signal?:AbortSignal;
-}):Promise<TestEvidence>{
+}
+
+async function runVerifiedCommand(
+  args:VerificationExecutionArgs & { effectClass:"test_build"|"shell"; timeoutSeconds?:number },
+  execute:()=>Promise<CommandResult>,
+):Promise<{evidence:TestEvidence;command:CommandResult}>{
   const metricStarted=performance.now();
   const snapshotStore=workspaceSnapshotStore(args.root);
   const policy=new PathPolicy(args.root);
@@ -140,10 +145,7 @@ export async function runTest(args:{
   args.store.recordMetric({sessionId:args.sessionId,runId:args.runId,name:"snapshot.hash_reused_files",value:beforeStats.reusedFiles,unit:"files"});
   args.store.recordMetric({sessionId:args.sessionId,runId:args.runId,name:"snapshot.hash_rehashed_files",value:beforeStats.hashedFiles,unit:"files"});
   const startedAt=nowIso();
-  const r=await args.executor.run(args.command,{
-    timeoutSeconds:args.executor.config.execution.test_build_timeout_seconds,
-    effectClass:"test_build",signal:args.signal,runId:args.runId,toolCallId:args.toolCallId
-  });
+  const r=await execute();
   const afterStarted=performance.now();
   const [after,repoIdAfter,gitAfter,afterReport]=await Promise.all([
     snapshotStore.digest(),repositoryIdentity(args.root),gitState(args.root),reportState(reportFile)
@@ -196,5 +198,29 @@ export async function runTest(args:{
   };
   args.store.recordEvidence({id:ev.id,sessionId:args.sessionId,runId:args.runId,payload:ev,snapshotDigest:ev.snapshotDigest,status:ev.status});
   args.store.recordMetric({sessionId:args.sessionId,runId:args.runId,name:"test.duration_ms",value:performance.now()-metricStarted});
-  return ev;
+  return {evidence:ev,command:r};
+}
+
+export async function runTest(args:VerificationExecutionArgs):Promise<TestEvidence>{
+  const result=await runVerifiedCommand({...args,effectClass:"test_build"},()=>args.executor.run(args.command,{
+    timeoutSeconds:args.executor.config.execution.test_build_timeout_seconds,
+    effectClass:"test_build",signal:args.signal,runId:args.runId,toolCallId:args.toolCallId,
+  }));
+  return result.evidence;
+}
+
+export async function runCommandWithEvidence(args:VerificationExecutionArgs & {timeoutSeconds?:number}):Promise<{command:CommandResult;evidence?:TestEvidence}>{
+  const trust=await classifyTestCommand(args.root,args.command,args.store.trustedCommandSnapshot(args.sessionId));
+  if(!trust.trusted){
+    const command=await args.executor.run(args.command,{
+      timeoutSeconds:args.timeoutSeconds,
+      effectClass:"shell",signal:args.signal,runId:args.runId,toolCallId:args.toolCallId,
+    });
+    return {command};
+  }
+  const result=await runVerifiedCommand({...args,effectClass:"shell"},()=>args.executor.run(args.command,{
+    timeoutSeconds:args.timeoutSeconds,
+    effectClass:"shell",signal:args.signal,runId:args.runId,toolCallId:args.toolCallId,
+  }));
+  return result;
 }

@@ -1,4 +1,5 @@
 import type { AgentHarness } from "../workflow/harness.js";
+import type { ToolOutcome } from "../agent/tool-outcome.js";
 
 function bounded(value:unknown,max=2000):string{
   const text=String(value??"");
@@ -7,21 +8,22 @@ function bounded(value:unknown,max=2000):string{
 
 export function buildFailureTriageState(args:{
   harness:AgentHarness;
-  toolName:string;
-  input:any;
-  details:any;
+  outcome:Extract<ToolOutcome,{kind:"test"|"command"}>;
   diagnostic:string;
   changedFiles:string[];
 }){
+  const command=String(args.outcome.input.command??"");
+  const details=args.outcome.kind==="test"?args.outcome.evidence:args.outcome.result;
+  const evidenceStatus=args.outcome.kind==="test"?args.outcome.evidence.status:args.outcome.evidence?.status;
   return {
     stage:args.harness.state.stage,
     attempt:args.harness.state.noProgress,
-    tool:args.toolName,
-    command:args.toolName==="run_command"||args.toolName==="run_test"?bounded(args.input?.command,500):undefined,
-    exitCode:args.details?.exitCode??null,
-    timedOut:Boolean(args.details?.timedOut),
-    cancelled:Boolean(args.details?.cancelled),
-    evidenceStatus:args.toolName==="run_test"?args.details?.status:undefined,
+    tool:args.outcome.toolName,
+    command:bounded(command,500),
+    exitCode:details.exitCode??null,
+    timedOut:Boolean(details.timedOut),
+    cancelled:Boolean(details.cancelled),
+    evidenceStatus,
     diagnosticSummary:bounded(args.diagnostic),
     changedFiles:args.changedFiles.slice(0,50),
     sourceChangedSincePreviousFailure:false,
@@ -43,19 +45,24 @@ export function buildProgressJudgeState(args:{
   };
 }
 
-export function buildReviewRiskState(review:any){
+export function buildReviewRiskState(review:Record<string,unknown>){
+  const changed=review.Changed as any;
+  const tested=review.Tested;
+  const taskEvidence=review.TaskEvidence;
+  const remainingRisk=review.RemainingRisk;
+  const unresolvedIssue=review.UnresolvedIssue;
   return {
     changed:{
-      branch:review?.Changed?.repository?.branch,
-      head:review?.Changed?.repository?.head,
-      status:bounded(review?.Changed?.repository?.status,1000),
-      diffPresent:Boolean(review?.Changed?.diff),
-      diffChars:typeof review?.Changed?.diff==="string"?review.Changed.diff.length:0,
-      agentPaths:Array.isArray(review?.Changed?.attribution?.agentPaths)?review.Changed.attribution.agentPaths.slice(0,50):[],
+      branch:changed?.repository?.branch,
+      head:changed?.repository?.head,
+      status:bounded(changed?.repository?.status,1000),
+      diffPresent:Boolean(changed?.diff),
+      diffChars:typeof changed?.diff==="string"?changed.diff.length:0,
+      agentPaths:Array.isArray(changed?.attribution?.agentPaths)?changed.attribution.agentPaths.slice(0,50):[],
     },
-    tested:Array.isArray(review?.Tested)?review.Tested.slice(0,20).map((x:any)=>({id:x.id,status:x.status,fresh:Boolean(x.fresh),identityFresh:Boolean(x.identityFresh)})):[],
-    tasks:Array.isArray(review?.TaskEvidence)?review.TaskEvidence.slice(0,50):[],
-    remainingRisk:Array.isArray(review?.RemainingRisk)?review.RemainingRisk.slice(0,30).map((x:any)=>bounded(x,1000)):[],
-    unresolvedIssue:Array.isArray(review?.UnresolvedIssue)?review.UnresolvedIssue.slice(0,30):[],
+    tested:Array.isArray(tested)?tested.slice(0,20).map((x:any)=>({id:x.id,status:x.status,fresh:Boolean(x.fresh),identityFresh:Boolean(x.identityFresh)})):[],
+    tasks:Array.isArray(taskEvidence)?taskEvidence.slice(0,50):[],
+    remainingRisk:Array.isArray(remainingRisk)?remainingRisk.slice(0,30).map((x:any)=>bounded(x,1000)):[],
+    unresolvedIssue:Array.isArray(unresolvedIssue)?unresolvedIssue.slice(0,30):[],
   };
 }

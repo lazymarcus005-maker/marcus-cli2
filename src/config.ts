@@ -196,7 +196,7 @@ export function validateConfig(config: MacusConfig): MacusConfig {
     if (!(providerName in config.models.providers)) throw new Error(`Alias ${aliasName} references unknown provider ${providerName}`);
   }
   for (const [name, provider] of Object.entries(config.models.providers)) {
-    if (!["openai-compatible","openrouter","litellm"].includes(provider.protocol)) throw new Error(`Unsupported provider protocol ${provider.protocol}`);
+    if (!["openai-compatible","openai-responses","openrouter","litellm"].includes(provider.protocol)) throw new Error(`Unsupported provider protocol ${provider.protocol}`);
     let url: URL; try { url=new URL(provider.base_url); } catch { throw new Error(`Invalid provider base_url for ${name}`); }
     if (!['http:','https:'].includes(url.protocol)) throw new Error(`Unsupported provider URL protocol for ${name}`);
     if (url.username || url.password) throw new Error(`Provider URL must not embed credentials for ${name}`);
@@ -214,6 +214,11 @@ export async function loadConfig(root: string, explicitPath?: string): Promise<{
   const projectRaw = await readYaml(projectPath);
   validateShape(globalRaw); validateShape(projectRaw); validateProjectConfig(projectRaw);
   const globalMerged=merge(DEFAULT_CONFIG,globalRaw);
+  const jevOverrides=globalRaw.internal_models?.jev ?? {};
+  if(jevOverrides.transport === "typesafe") {
+    if(jevOverrides.model === undefined) globalMerged.internal_models.jev.model="jev-latest";
+    if(jevOverrides.api_key_env === undefined) globalMerged.internal_models.jev.api_key_env="TYPESAFE_API_KEY";
+  }
   for(const [k,v] of Object.entries(projectRaw.context?.budget??{})){ const ceiling=(globalMerged.context.budget as any)[k]; if(typeof v==="number" && v>ceiling) throw new Error(`Project context budget ${k} exceeds user/global ceiling ${ceiling}`); }
   const config = validateConfig(merge(globalMerged, projectRaw));
   return { config, sources: { global: globalPath, project: projectPath } };

@@ -10,9 +10,8 @@ import { TaskEngine } from "../workflow/tasks.js";
 import { GraphStore, buildLightweightEdges } from "../graph/graph.js";
 import { gitState, gitDiff, gitLog, gitShow, gitBlame } from "../repository.js";
 import { featureEnabled, featureUnavailable } from "../capabilities.js";
-import { runTest } from "../testing/evidence.js";
+import { runCommandWithEvidence, runTest } from "../testing/evidence.js";
 import { buildReview } from "../review.js";
-import type { AgentHarness } from "../workflow/harness.js";
 import { PathPolicy } from "../path-policy.js";
 import { ContextLedger } from "../context/ledger.js";
 
@@ -26,10 +25,9 @@ export function createMacusTools(args:{
   executor:PolicyExecutor;
   tasks:TaskEngine;
   graph?:GraphStore;
-  getHarness?:()=>AgentHarness|undefined;
   getRunId?:()=>string|undefined;
 }): ToolDefinition[] {
-  const {root,config,executor,tasks,graph,getHarness,getRunId}=args;
+  const {root,config,executor,tasks,graph,getRunId}=args;
   const tools:ToolDefinition[]=[];
 
   tools.push(
@@ -37,7 +35,6 @@ export function createMacusTools(args:{
       name:"search_code", label:"Search Code", description:"Bounded repository search with secret/internal path policy.",
       parameters:Type.Object({query:Type.String(),path:Type.Optional(Type.String()),maxResults:Type.Optional(Type.Number({minimum:1})),literal:Type.Optional(Type.Boolean()),caseSensitive:Type.Optional(Type.Boolean()),cursor:Type.Optional(Type.String())}),
       async execute(_id,p,signal){
-        getHarness?.()?.advance("discover");
         const started=performance.now();
         try{return textResult(await searchCode(root,config,{...p,signal}));}
         finally{executor.store.recordMetric({sessionId:executor.sessionId,runId:getRunId?.(),name:"search.latency_ms",value:performance.now()-started});}
@@ -47,7 +44,6 @@ export function createMacusTools(args:{
       name:"read_range", label:"Read Range", description:"Read a fresh, bounded line range with source hash.",
       parameters:Type.Object({path:Type.String(),startLine:Type.Number({minimum:1}),endLine:Type.Number({minimum:1}),expectedHash:Type.Optional(Type.String())}),
       async execute(_id,p){
-        getHarness?.()?.advance("discover");
         return textResult(await readRange(root,p.path,p.startLine,p.endLine,p.expectedHash));
       }
     }),
@@ -55,7 +51,6 @@ export function createMacusTools(args:{
       name:"search_symbol", label:"Search Symbol", description:"Refresh one supported file and return disambiguated structural symbols.",
       parameters:Type.Object({path:Type.String(),query:Type.Optional(Type.String())}),
       async execute(_id,p){
-        getHarness?.()?.advance("discover");
         const idx=await SymbolIndex.open(root,config);
         try{
           let refreshed;
@@ -114,7 +109,6 @@ export function createMacusTools(args:{
       executionMode:"sequential",
       async execute(_id,p){
         const result=await executor.safeWrite(p.path,p.content,p.expectedHash,{runId:getRunId?.(),toolCallId:_id});
-        getHarness?.()?.advance("implement");
         return textResult({path:p.path,...result});
       }
     }),
@@ -122,7 +116,14 @@ export function createMacusTools(args:{
       name:"run_command", label:"Run Command", description:"Run a bounded authorized workspace command.",
       parameters:Type.Object({command:Type.String(),timeoutSeconds:Type.Optional(Type.Number({minimum:1}))}),
       executionMode:"sequential",
-      async execute(_id,p,signal){return textResult(await executor.run(p.command,{timeoutSeconds:p.timeoutSeconds,signal,effectClass:"shell",runId:getRunId?.(),toolCallId:_id}));}
+      async execute(_id,p,signal){
+        const result=await runCommandWithEvidence({
+          root,sessionId:executor.sessionId,runId:getRunId?.(),toolCallId:_id,command:p.command,
+          timeoutSeconds:p.timeoutSeconds,executor,store:executor.store,signal,
+        });
+        if(result.evidence)tasks.attachEvidence(result.evidence.id);
+        return textResult(result);
+      }
     }),
     defineTool({
       name:"run_test", label:"Run Test", description:"Run a bounded test/build command and persist structured evidence for the current source snapshot.",
@@ -133,15 +134,8 @@ export function createMacusTools(args:{
       }),
       executionMode:"sequential",
       async execute(_id,p,signal){
-        const harness=getHarness?.();
-        harness?.advance("test");
         const evidence=await runTest({root,sessionId:executor.sessionId,runId:getRunId?.(),toolCallId:_id,command:p.command,executor,store:executor.store,reportPath:p.reportPath,reportFormat:p.reportFormat,signal});
         tasks.attachEvidence(evidence.id);
-        if(evidence.status==="passed") harness?.advance("review");
-        else {
-          harness?.onFailure(`${evidence.status}:${evidence.command}`,evidence.snapshotDigest,false);
-          if(harness?.state.stage!=="blocked") harness?.advance("fix");
-        }
         return textResult(evidence);
       }
     }),
@@ -154,7 +148,6 @@ export function createMacusTools(args:{
       name:"review", label:"Review", description:"Inspect current diff, durable tasks and fresh test evidence before completion.",
       parameters:Type.Object({}),
       async execute(){
-        getHarness?.()?.advance("review");
         return textResult(await buildReview(root,executor.store,executor.sessionId,featureEnabled(config,"git_context")));
       }
     })
@@ -192,7 +185,7 @@ export function createMacusTools(args:{
   if(featureEnabled(config,"task_engine")){
     tools.push(
       defineTool({name:"tasks",label:"Tasks",description:"List durable session tasks.",parameters:Type.Object({}),async execute(){return textResult(tasks.list());}}),
-      defineTool({name:"task_create",label:"Create Task",description:"Create a durable task.",parameters:Type.Object({id:Type.String(),title:Type.String()}),executionMode:"sequential",async execute(_id,p){getHarness?.()?.advance("plan");return textResult(tasks.create(p.id,p.title));}}),
+      defineTool({name:"task_create",label:"Create Task",description:"Create a durable task.",parameters:Type.Object({id:Type.String(),title:Type.String()}),executionMode:"sequential",async execute(_id,p){return textResult(tasks.create(p.id,p.title));}}),
       defineTool({name:"task_transition",label:"Transition Task",description:"Move a durable task through valid workflow states.",parameters:Type.Object({id:Type.String(),status:Type.Union([Type.Literal("pending"),Type.Literal("in_progress"),Type.Literal("completed"),Type.Literal("blocked"),Type.Literal("skipped")])}),executionMode:"sequential",async execute(_id,p){return textResult(tasks.transition(p.id,p.status));}})
     );
   }

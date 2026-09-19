@@ -77,7 +77,7 @@ Supported endpoint default:
 POST https://api.typesafe.ai/v1/systemone
 ```
 
-The direct transport uses the same internal provider abstraction. Current automated tests use mock HTTP only; direct live provider validation remains external.
+The direct transport uses the same internal provider abstraction. It defaults to model ID `jev-latest` and environment variable `TYPESAFE_API_KEY`. The `typesafe/jev-1.13` model ID belongs to OpenRouter and is rejected by the direct endpoint.
 
 ## Data minimization
 
@@ -111,22 +111,30 @@ The following all return control to Marcus without failing the coding run:
 
 ## Tests
 
-Current normal regression result:
+Latest normal regression result after the TypeSafe transport defaults were fixed:
 
 ```text
-117 passed
+134 passed
 1 live-only test skipped
-61 total test files
-69 passed files
+76 total test files
+75 passed files
 1 skipped live-only file
 ```
 
-The live test is intentionally excluded unless:
+The live test is normally skipped; it runs when the selected transport's key is available. For OpenRouter:
 
 ```bash
 export OPENROUTER_API_KEY=...
 npm run test:jev-live
 ```
+
+For TypeSafe direct transport:
+
+```bash
+MACUS_JEV_TRANSPORT=typesafe TYPESAFE_API_KEY=... npm run test:jev-live
+```
+
+Live TypeSafe validation passed on 2026-09-19. The API resolved `jev-latest` to `jev-1.13.0`; an installed-package integration run recorded a successful shadow failure-triage decision in 827 ms.
 
 ## Promotion gate
 

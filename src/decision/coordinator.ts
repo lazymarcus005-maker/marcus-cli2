@@ -1,5 +1,6 @@
 import { id } from "../utils.js";
 import type { AgentHarness } from "../workflow/harness.js";
+import type { ToolOutcome } from "../agent/tool-outcome.js";
 import { JevDecisionEngine } from "./engine.js";
 import { questionsFor } from "./questions.js";
 import { buildFailureTriageState,buildProgressJudgeState,buildReviewRiskState } from "./state-builder.js";
@@ -23,19 +24,21 @@ export class HarnessDecisionCoordinator {
   }
 
   observeToolResult(args:{
-    event:any;
+    outcome:ToolOutcome;
     harness:AgentHarness;
     runId?:string;
     changedFiles:string[];
     diagnostic:string;
     signal?:AbortSignal;
   }):void{
-    const d=args.event.details as any;
-    const testFailed=args.event.toolName==="run_test"&&d?.status==="failed";
-    const commandFailed=args.event.toolName==="run_command"&&Boolean(d?.timedOut||d?.cancelled||d?.exitCode!==0);
+    const outcome=args.outcome;
+    const testFailed=outcome.kind==="test"&&outcome.evidence.status!=="passed";
+    const commandFailed=outcome.kind==="command"&&Boolean(
+      outcome.result.timedOut||outcome.result.cancelled||outcome.result.exitCode!==0||outcome.evidence&&outcome.evidence.status!=="passed"
+    );
     if(testFailed||commandFailed){
       this.schedule("failure_triage",buildFailureTriageState({
-        harness:args.harness,toolName:args.event.toolName,input:args.event.input,details:d,
+        harness:args.harness,outcome:outcome as Extract<ToolOutcome,{kind:"test"|"command"}>,
         diagnostic:args.diagnostic,changedFiles:args.changedFiles,
       }),args.runId,args.signal);
       if(args.harness.state.noProgress>=2){
@@ -44,8 +47,8 @@ export class HarnessDecisionCoordinator {
         }),args.runId,args.signal);
       }
     }
-    if(args.event.toolName==="review"){
-      this.schedule("review_risk",buildReviewRiskState(d),args.runId,args.signal);
+    if(outcome.kind==="review"){
+      this.schedule("review_risk",buildReviewRiskState(outcome.review),args.runId,args.signal);
     }
   }
 

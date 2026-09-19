@@ -12,6 +12,19 @@ describe("config",()=>{
     const c=structuredClone(DEFAULT_CONFIG); c.context.compact_prompt_ratio=0.4;
     expect(()=>validateConfig(c)).toThrow(/target/);
   });
+  it("accepts OpenAI Responses API providers",()=>{
+    const c=structuredClone(DEFAULT_CONFIG);
+    c.models={default:"primary",providers:{zen:{protocol:"openai-responses",base_url:"https://opencode.ai/zen/v1",api_key_env:"MACUS_RESPONSES_TEST_KEY",profile:"standard",model:"muse-spark-1.3-contributor-free"}},aliases:{primary:"zen"}};
+    c.model_profiles={standard:{context_window:65536,max_output_tokens:1024,tokenizer:"conservative-byte-estimate"}};
+    const original=process.env.MACUS_RESPONSES_TEST_KEY;
+    try{
+      process.env.MACUS_RESPONSES_TEST_KEY="test-key";
+      expect(validateConfig(c).models.providers.zen.protocol).toBe("openai-responses");
+    }finally{
+      if(original===undefined)delete process.env.MACUS_RESPONSES_TEST_KEY;
+      else process.env.MACUS_RESPONSES_TEST_KEY=original;
+    }
+  });
   it("rejects unknown fields and project budget escalation",async()=>{
     const root=await mkdtemp(path.join(os.tmpdir(),"macus-config-")); await mkdir(path.join(root,".macus"),{recursive:true});
     const global=path.join(root,"global.yaml");

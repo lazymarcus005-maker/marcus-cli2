@@ -31,9 +31,10 @@ Post-review hardening status, 2026-09-19.
 
 ## Regression gate
 
-- Current runtime: **118 passed tests + 1 live-only skipped test across 70 files**.
-- Node 22.19.0: **118 passed tests + 1 live-only skipped test across 70 files**.
-- Typecheck: passed.
-- Build: passed.
+- Current runtime: **134 passed tests + 1 live-only skipped test across 76 files**.
+- Node 22.19.0: **134 passed tests + 1 live-only skipped test across 76 files**.
+- Typecheck, lint and build: passed.
+- npm audit: 0 known vulnerabilities.
+- TypeSafe direct live transport and installed-package Jev shadow integration: passed.
 
 "Done" means the ticket's implementation path is wired and its locally executable acceptance evidence passes. It does not assert production-ready V1 while external release gates remain unresolved.

@@ -1,6 +1,7 @@
 import type { HarnessDecisionCoordinator } from "../decision/coordinator.js";
 import type { WorkingSet } from "../context/working-set.js";
 import type { AgentHarness } from "../workflow/harness.js";
+import { normalizeToolOutcome, outcomeFailed } from "./tool-outcome.js";
 
 export class ToolResultCoordinator {
   constructor(
@@ -10,19 +11,34 @@ export class ToolResultCoordinator {
     readonly getSignal:()=>AbortSignal|undefined,
   ){}
 
-  observe(event:any,harness:AgentHarness|undefined):void{
+  observe(event:unknown,harness:AgentHarness|undefined):void{
     if(!harness)return;
-    const d=event.details as any;
-    const failed=Boolean(event.isError)||(event.toolName==="run_command"&&Boolean(d?.timedOut||d?.cancelled||d?.exitCode!==0));
-    const text=(event.content??[]).filter((x:any)=>x.type==="text").map((x:any)=>x.text).join("\n");
+    const outcome=normalizeToolOutcome(event);
+    const failed=outcomeFailed(outcome);
     const sourceVersion=this.workingSet.list().map(x=>x.path+":"+x.sourceHash).join("|")||"no-source";
-    const diagnostic=event.toolName==="run_command"
-      ?`run_command:${String(event.input?.command??"")}:exit=${String(d?.exitCode)}:timeout=${Boolean(d?.timedOut)}:cancelled=${Boolean(d?.cancelled)}`
-      :event.toolName+":"+text;
-    if(failed&&event.toolName!=="run_test")harness.onFailure(diagnostic,sourceVersion,false);
-    else if(!failed&&(event.toolName==="write_file"||event.toolName==="task_transition"||(event.toolName==="run_test"&&d?.status==="passed")))harness.onProgress();
+    const command=outcome.kind==="test"||outcome.kind==="command"?String(outcome.input.command??""):"";
+    const details=outcome.kind==="test"?outcome.evidence:outcome.kind==="command"?outcome.result:{};
+    const evidenceStatus=outcome.kind==="test"?outcome.evidence.status:outcome.kind==="command"?outcome.evidence?.status:undefined;
+    const diagnostic=(outcome.kind==="test"||outcome.kind==="command")
+      ?`${outcome.toolName}:${command}:exit=${String(details.exitCode)}:timeout=${Boolean(details.timedOut)}:cancelled=${Boolean(details.cancelled)}:status=${String(evidenceStatus??details.status??"")}`
+      :outcome.toolName+":"+outcome.text;
+
+    if(!failed){
+      if(outcome.kind==="discovery")harness.advance("discover");
+      else if(outcome.kind==="task"&&outcome.toolName==="task_create")harness.advance("plan");
+      else if(outcome.kind==="write")harness.advance("implement");
+      else if(outcome.kind==="test")harness.advance("review");
+      else if(outcome.kind==="command"&&outcome.evidence?.status==="passed")harness.advance("review");
+      else if(outcome.kind==="review")harness.advance("review");
+    }
+    if(failed){
+      harness.onFailure(diagnostic,sourceVersion,false);
+      if(harness.state.stage!=="blocked")harness.advance("fix");
+    }else if(outcome.kind==="write"||(outcome.kind==="task"&&outcome.toolName==="task_transition")||outcome.kind==="test"||(outcome.kind==="command"&&outcome.evidence?.status==="passed")){
+      harness.onProgress();
+    }
     this.decisions.observeToolResult({
-      event,harness,runId:this.getRunId(),diagnostic,
+      outcome,harness,runId:this.getRunId(),diagnostic,
       changedFiles:this.workingSet.list().filter(x=>x.status!=="STALE").map(x=>x.path).slice(0,50),
       signal:this.getSignal(),
     });

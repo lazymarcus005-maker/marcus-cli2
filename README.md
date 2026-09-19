@@ -55,6 +55,8 @@ export MACUS_MODEL_API_KEY="..."
 
 Credentials are bound to trusted user/global provider configuration and are removed from tool subprocess environments by default.
 
+For providers that expose the OpenAI Responses API, set the provider `protocol` to `openai-responses` and set `base_url` to the API root before `/responses`. OpenCode Zen's `muse-spark-1.3-contributor-free` uses `https://opencode.ai/zen/v1` as its base URL.
+
 ## Explicit execution authorization
 
 Macus fails closed for mutation and shell execution. Within an interactive session:
@@ -98,7 +100,7 @@ Marcus can optionally use TypeSafe Jev as an internal **shadow decision engine**
 
 Enable it only from trusted global/user configuration; project config may disable it but cannot enable or reconfigure the external provider. The current runtime supports shadow mode only, so Jev decisions are recorded for evaluation and do not change authorization, test evidence, source freshness, recovery, hard run limits, or harness routing.
 
-OpenRouter uses its dedicated Decisions endpoint rather than chat completions. The default pinned model is `typesafe/jev-1.13`. See `docs/config.example.yaml`, `docs/jev-implementation.md`, and `jev_improve-handoff.md`.
+OpenRouter uses its dedicated Decisions endpoint rather than chat completions. The default pinned model is `typesafe/jev-1.13`. TypeSafe direct transport uses `https://api.typesafe.ai/v1/systemone` with `jev-latest` and `TYPESAFE_API_KEY` by default. See `docs/config.example.yaml`, `docs/jev-implementation.md`, and `jev_improve-handoff.md`.
 
 Inspect recorded shadow decisions with:
 
@@ -107,11 +109,17 @@ Inspect recorded shadow decisions with:
 /decisions
 ```
 
-Optional live validation is separate from the normal regression suite:
+Optional live validation is separate from the normal regression suite. For OpenRouter:
 
 ```bash
 export OPENROUTER_API_KEY=...
 npm run test:jev-live
+```
+
+For direct TypeSafe access:
+
+```bash
+MACUS_JEV_TRANSPORT=typesafe TYPESAFE_API_KEY=... npm run test:jev-live
 ```
 
 ## Storage

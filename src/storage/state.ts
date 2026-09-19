@@ -264,6 +264,11 @@ export class StateStore {
     return Boolean(this.db.prepare("SELECT 1 FROM runs WHERE id=? AND session_id=?").get(runId,sessionId));
   }
 
+  latestRunId(sessionId:string):string|undefined{
+    const row=this.db.prepare("SELECT id FROM runs WHERE session_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1").get(sessionId) as any;
+    return row?String(row.id):undefined;
+  }
+
   latestLedgerRevision(sessionId:string):{revision:number;payload:any}|undefined{
     const row=this.db.prepare("SELECT revision,payload FROM ledger_revisions WHERE session_id=? ORDER BY revision DESC LIMIT 1").get(sessionId) as any;
     if(!row)return undefined;
@@ -277,13 +282,16 @@ export class StateStore {
 
   listEvidence(sessionId:string,limit?:number):Array<{id:string;status:string;snapshotDigest:string;payload:any}>{
     const rows=(limit
-      ?this.db.prepare("SELECT id,status,snapshot_digest,payload FROM test_evidence WHERE session_id=? ORDER BY created_at DESC LIMIT ?").all(sessionId,limit)
-      :this.db.prepare("SELECT id,status,snapshot_digest,payload FROM test_evidence WHERE session_id=? ORDER BY created_at DESC").all(sessionId)) as any[];
+      ?this.db.prepare("SELECT id,status,snapshot_digest,payload FROM test_evidence WHERE session_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?").all(sessionId,limit)
+      :this.db.prepare("SELECT id,status,snapshot_digest,payload FROM test_evidence WHERE session_id=? ORDER BY created_at DESC,rowid DESC").all(sessionId)) as any[];
     return rows.map(row=>{let payload:any={};try{payload=JSON.parse(row.payload);}catch{}return {id:String(row.id),status:String(row.status),snapshotDigest:String(row.snapshot_digest),payload};});
   }
 
-  completedWorkspaceEditPayloads(sessionId:string):any[]{
-    return (this.db.prepare("SELECT payload FROM executions WHERE session_id=? AND effect_class='workspace_edit' AND status='completed'").all(sessionId) as any[]).map(row=>{try{return JSON.parse(row.payload??"{}")??{};}catch{return {};}});
+  completedWorkspaceEditPayloads(sessionId:string,runId?:string):any[]{
+    const rows=(runId
+      ?this.db.prepare("SELECT payload FROM executions WHERE session_id=? AND run_id=? AND effect_class='workspace_edit' AND status='completed'").all(sessionId,runId)
+      :this.db.prepare("SELECT payload FROM executions WHERE session_id=? AND effect_class='workspace_edit' AND status='completed'").all(sessionId)) as any[];
+    return rows.map(row=>{try{return JSON.parse(row.payload??"{}")??{};}catch{return {};}});
   }
 
   recordCheckpoint(input:{id:string;sessionId:string;stateRevision:number;filePath:string;committed?:boolean}):void{

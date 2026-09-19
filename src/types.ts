@@ -61,7 +61,7 @@ export interface ModelProfile {
 }
 
 export interface ProviderConfig {
-  protocol: "openai-compatible" | "openrouter" | "litellm";
+  protocol: "openai-compatible" | "openai-responses" | "openrouter" | "litellm";
   base_url: string;
   api_key_env?: string;
   profile: string;

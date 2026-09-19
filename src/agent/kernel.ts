@@ -1,11 +1,10 @@
 import path from "node:path";
 import os from "node:os";
 import {
-  createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, ModelRuntime,
+  createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager,
   type InlineExtension, type AgentSession
 } from "@earendil-works/pi-coding-agent";
 import type { MacusConfig, RequestManifest } from "../types.js";
-import { usablePromptCapacity } from "../context/budget.js";
 import { ManifestStore } from "../context/manifest-store.js";
 import { resolveInstructions, renderInstructions } from "../instructions.js";
 import { StateStore } from "../storage/state.js";
@@ -19,12 +18,13 @@ import type { DecisionKind } from "../decision/types.js";
 import { WorkingSet } from "../context/working-set.js";
 import { fileHash } from "../utils.js";
 import { ContextLedger } from "../context/ledger.js";
-import { createCheckpoint } from "../storage/checkpoint.js";
+import { DurableContinuity } from "../runtime/durable-continuity.js";
 import { repositoryIdentity } from "../repository.js";
 import { PathPolicy } from "../path-policy.js";
 import { ContextCoordinator } from "../context/coordinator.js";
 import { ToolResultCoordinator } from "./tool-result-coordinator.js";
 import { RunController, type RunStatus } from "../runtime/run-controller.js";
+import { ProviderRuntime } from "./provider-runtime.js";
 
 export interface KernelEvents { type:string; text?:string; raw?:unknown; }
 
@@ -35,7 +35,7 @@ export class PiAgentKernel {
   private graph?:GraphStore;
   private executor?:PolicyExecutor;
   private latestSourceHashes=new Map<string,string>();
-  private runtime?:ModelRuntime;
+  private providerRuntime?:ProviderRuntime;
   private activeModelAlias:string;
   private activeProfileName="";
   private workingSet=new WorkingSet();
@@ -110,16 +110,16 @@ export class PiAgentKernel {
   }
 
   private async checkpointBeforeCompaction(event:any):Promise<void>{
-    const revision=this.persistLedger("continue after compaction");
+    this.persistLedger("continue after compaction");
     if(!this.config.features.checkpoint) return;
-    const ledger=this.config.features.context_ledger?new ContextLedger(this.store,this.sessionId).latest():undefined;
-    const evidence=this.store.listEvidence(this.sessionId,20).map(x=>({id:x.id,status:x.status,snapshot_digest:x.snapshotDigest}));
-    await createCheckpoint(this.root,this.store,{
-      schemaVersion:1,sessionId:this.sessionId,repoIdentity:await repositoryIdentity(this.root),root:this.root,
-      transcriptRef:event?.branchEntries?.at?.(-1)?.id,stateRevision:revision||ledger?.revision||0,
-      goal:this.currentGoal,tasks:this.store.listTasks(this.sessionId),decisions:ledger?.state.decisions??[],
-      changedFiles:ledger?.state.workingFiles??this.workingSet.list().filter(x=>x.status!=="STALE").map(x=>({path:x.path,hash:x.sourceHash})),
-      evidence,nextAction:ledger?.state.nextAction??"continue after compaction",unknownExecutions:this.store.unknownExecutions(this.sessionId)
+    const continuity=new DurableContinuity(
+      this.root,await repositoryIdentity(this.root),
+      this.store,this.sessionId,this.config.features.context_ledger,
+    );
+    await continuity.createCheckpoint({
+      transcriptRef:event?.branchEntries?.at?.(-1)?.id,
+      nextAction:"continue after compaction",
+      changedFiles:this.workingSet.list().filter(x=>x.status!=="STALE").map(x=>({path:x.path,hash:x.sourceHash})),
     });
   }
 
@@ -158,34 +158,11 @@ export class PiAgentKernel {
     };
   }
 
-  private async modelRuntime(){
-    const runtime=await ModelRuntime.create({refreshOnCreate:false});
-    for(const [providerName,provider] of Object.entries(this.config.models.providers)){
-      const profile=this.config.model_profiles[provider.profile];
-      if(!profile) throw new Error("Unknown model profile "+provider.profile);
-      runtime.registerProvider(providerName,{
-        name:providerName,baseUrl:provider.base_url,api:"openai-completions" as any,authHeader:true,
-        models:[{id:provider.model,name:provider.model,api:"openai-completions" as any,reasoning:false,input:["text"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:profile.context_window,maxTokens:profile.max_output_tokens}]
-      });
-      if(provider.api_key_env){
-        const key=process.env[provider.api_key_env];
-        if(!key) throw new Error("Missing environment variable "+provider.api_key_env);
-        await runtime.setRuntimeApiKey(providerName,key);
-      }
-    }
-    const providerName=this.config.models.aliases[this.activeModelAlias];
-    if(!providerName) throw new Error("Unknown model alias "+this.activeModelAlias);
-    const provider=this.config.models.providers[providerName];
-    const profile=this.config.model_profiles[provider.profile];
-    usablePromptCapacity(profile,this.config.context);
-    const model=runtime.getModel(providerName,provider.model);
-    if(!model) throw new Error("Configured model unavailable: "+provider.model);
-    this.runtime=runtime; this.activeProfileName=provider.profile;
-    return {runtime,model};
-  }
-
   async create(onEvent?:(event:KernelEvents)=>void):Promise<AgentSession>{
-    const {runtime,model}=await this.modelRuntime();
+    const providerRuntime=await ProviderRuntime.create(this.config);
+    const selected=providerRuntime.resolve(this.activeModelAlias);
+    this.providerRuntime=providerRuntime;
+    this.activeProfileName=selected.profileName;
     await this.hydrateLedger();
     const instructions=await resolveInstructions(this.root,this.root);
     const agentDir=path.join(os.homedir(),".macus","pi");
@@ -203,14 +180,13 @@ export class PiAgentKernel {
     this.executor=executor;
     const tasks=new TaskEngine(this.store,this.sessionId);
     const customTools=createMacusTools({
-      root:this.root,config:this.config,executor,tasks,graph:this.graph,
-      getHarness:()=>this.runController.harness,getRunId:()=>this.runController.runId
+      root:this.root,config:this.config,executor,tasks,graph:this.graph,getRunId:()=>this.runController.runId
     });
 
     const sessionDir=path.join(this.root,".macus","sessions",this.sessionId);
     const sessionManager=SessionManager.continueRecent(this.root,sessionDir);
     const {session}=await createAgentSession({
-      cwd:this.root,agentDir,modelRuntime:runtime,model,resourceLoader:loader,settingsManager:settings,sessionManager,
+      cwd:this.root,agentDir,modelRuntime:providerRuntime.runtime,model:selected.model,resourceLoader:loader,settingsManager:settings,sessionManager,
       noTools:"builtin",customTools,tools:customTools.map(t=>t.name)
     });
     session.setAutoCompactionEnabled(this.config.features.auto_compaction);
@@ -229,17 +205,11 @@ export class PiAgentKernel {
   }
 
   async switchModel(alias:string){
-    const providerName=this.config.models.aliases[alias];
-    if(!providerName) throw new Error("Unknown trusted model alias "+alias);
-    const provider=this.config.models.providers[providerName];
-    const profile=this.config.model_profiles[provider.profile];
-    usablePromptCapacity(profile,this.config.context);
-    if(!this.runtime) throw new Error("Kernel not created");
-    const model=this.runtime.getModel(providerName,provider.model);
-    if(!model) throw new Error("Configured model unavailable: "+provider.model);
-    await this.current.setModel(model);
-    this.activeModelAlias=alias;
-    this.activeProfileName=provider.profile;
+    if(!this.providerRuntime) throw new Error("Kernel not created");
+    const selected=this.providerRuntime.resolve(alias);
+    await this.current.setModel(selected.model);
+    this.activeModelAlias=selected.alias;
+    this.activeProfileName=selected.profileName;
   }
 
   authorize(scope:"edits"|"shell"|"all"){
