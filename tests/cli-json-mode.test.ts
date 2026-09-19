@@ -88,6 +88,28 @@ describe("CLI JSON mode",()=>{
     await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});
   },15000);
 
+  it("uses verification exit status for a human-readable prompt run",async()=>{
+    let calls=0;
+    const server=http.createServer(async(req,res)=>{
+      for await(const _ of req){};calls++;
+      if(calls===1){
+        sse(res,[
+          {id:"c1",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{role:"assistant",tool_calls:[{index:0,id:"t1",type:"function",function:{name:"run_test",arguments:JSON.stringify({command:"npm test"})}}]},finish_reason:null}]},
+          {id:"c1",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{},finish_reason:"tool_calls"}]},
+        ]);
+      }else{
+        sse(res,[{id:"c2",object:"chat.completion.chunk",created:1,model:"mock",choices:[{index:0,delta:{role:"assistant",content:"done"},finish_reason:"stop"}]}]);
+      }
+    });
+    await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));const port=(server.address() as any).port;
+    const root=await mkdtemp(path.join(os.tmpdir(),"macus-human-verify-"));
+    const config=path.join(root,"global.yaml");await writeFile(config,configYaml(port));
+    const result=await run(root,["--config",config,"--authorize","shell","run tests"],{MACUS_TEST_KEY:"secret"});
+    expect(result.code).toBe(3);
+    expect(result.stdout).toContain("done");
+    await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});
+  },15000);
+
   it("uses exit code 3 when a completed run edits workspace files without fresh passing evidence",async()=>{
     const root=await mkdtemp(path.join(os.tmpdir(),"macus-json-unverified-edit-"));
     const source=path.join(root,"app.mjs");

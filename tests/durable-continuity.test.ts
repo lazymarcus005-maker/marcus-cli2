@@ -7,6 +7,7 @@ import { TaskEngine } from "../src/workflow/tasks.js";
 import { ContextLedger } from "../src/context/ledger.js";
 import { repositoryIdentity } from "../src/repository.js";
 import { DurableContinuity } from "../src/runtime/durable-continuity.js";
+import { loadCheckpoint } from "../src/storage/checkpoint.js";
 
 describe("durable continuity",()=>{
   it("captures and restores task and ledger state through one session interface",async()=>{
@@ -31,6 +32,22 @@ describe("durable continuity",()=>{
       expect(new ContextLedger(store,sessionId).latest()?.state.goal).toBe("Change value");
       const checkpoint=await continuity.createCheckpoint();
       expect(checkpoint).not.toBe(checkpointId);
+    }finally{
+      store.close();
+      await rm(root,{recursive:true,force:true});
+    }
+  });
+
+  it("preserves an explicit active goal when the context ledger is disabled",async()=>{
+    const root=await mkdtemp(path.join(os.tmpdir(),"macus-continuity-no-ledger-"));
+    const store=await StateStore.open(root);
+    const repoId=await repositoryIdentity(root);
+    const sessionId=store.createSession(root,repoId);
+    const continuity=new DurableContinuity(root,repoId,store,sessionId,false);
+    try{
+      const checkpointId=await continuity.createCheckpoint({goal:"Finish the current task"});
+      const checkpoint=await loadCheckpoint(store,checkpointId);
+      expect(checkpoint.goal).toBe("Finish the current task");
     }finally{
       store.close();
       await rm(root,{recursive:true,force:true});

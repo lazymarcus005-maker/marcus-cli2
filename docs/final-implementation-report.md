@@ -50,7 +50,7 @@ Latest local validation:
 - npm run lint — passed on Node 22.19.0 after the architecture changes.
 - npm run build — passed on Node 22.19.0 after the architecture changes.
 - Node 22.19.0 / npm 11.6.2 clean install — passed (228 packages; audit found 0 vulnerabilities).
-- npm test — **134 passed; 1 live-only skipped across 76 test files** on Node 22.19.0, including new provider-runtime, durable-continuity, verification-assessment, trusted-command evidence, tool-result coordination, CLI application and end-to-end CLI coverage.
+- npm test — **136 passed; 1 live-only skipped across 76 test files** on Node 22.19.0, including provider-runtime, durable-continuity, verification-assessment, trusted-command evidence, tool-result coordination, CLI application and end-to-end CLI coverage.
 - Current package artifact: `npm pack` produced a 163-entry, 616,527-byte unpacked tarball; installing it under a separate prefix added 179 packages. The installed executable includes a Node shebang and passed `--help` and `--json` status startup.
 - Installed-package E2E against a local OpenAI-compatible endpoint: two provider requests, `run_command` launched a real fixture `npm test`, trusted passing evidence was recorded, and the installed CLI exited 0.
 - Live TypeSafe direct-provider test passed with a minimal connectivity state. `jev-latest` resolved to `jev-1.13.0`, returned a valid Noul answer, and reported 304 input / 20 output tokens in about 0.8 s.

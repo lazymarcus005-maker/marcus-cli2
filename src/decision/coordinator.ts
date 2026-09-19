@@ -1,6 +1,6 @@
 import { id } from "../utils.js";
 import type { AgentHarness } from "../workflow/harness.js";
-import type { ToolOutcome } from "../agent/tool-outcome.js";
+import { outcomeFailed, type ToolOutcome } from "../agent/tool-outcome.js";
 import { JevDecisionEngine } from "./engine.js";
 import { questionsFor } from "./questions.js";
 import { buildFailureTriageState,buildProgressJudgeState,buildReviewRiskState } from "./state-builder.js";
@@ -32,11 +32,7 @@ export class HarnessDecisionCoordinator {
     signal?:AbortSignal;
   }):void{
     const outcome=args.outcome;
-    const testFailed=outcome.kind==="test"&&outcome.evidence.status!=="passed";
-    const commandFailed=outcome.kind==="command"&&Boolean(
-      outcome.result.timedOut||outcome.result.cancelled||outcome.result.exitCode!==0||outcome.evidence&&outcome.evidence.status!=="passed"
-    );
-    if(testFailed||commandFailed){
+    if((outcome.kind==="test"||outcome.kind==="command")&&outcomeFailed(outcome)){
       this.schedule("failure_triage",buildFailureTriageState({
         harness:args.harness,outcome:outcome as Extract<ToolOutcome,{kind:"test"|"command"}>,
         diagnostic:args.diagnostic,changedFiles:args.changedFiles,

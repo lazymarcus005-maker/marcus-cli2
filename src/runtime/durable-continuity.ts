@@ -14,7 +14,7 @@ export class DurableContinuity {
     readonly ledgerEnabled: boolean,
   ) {}
 
-  async createCheckpoint(args: { transcriptRef?: string; nextAction?: string; changedFiles?: Array<{path:string;hash:string}> } = {}): Promise<string> {
+  async createCheckpoint(args: { transcriptRef?: string; goal?: string; nextAction?: string; changedFiles?: Array<{path:string;hash:string}> } = {}): Promise<string> {
     const ledger = this.ledgerEnabled ? new ContextLedger(this.store, this.sessionId).latest() : undefined;
     return createCheckpoint(this.root, this.store, {
       schemaVersion: 1,
@@ -23,7 +23,7 @@ export class DurableContinuity {
       root: this.root,
       transcriptRef: args.transcriptRef ?? currentTranscriptRef(this.root, this.sessionId),
       stateRevision: ledger?.revision ?? 0,
-      goal: ledger?.state.goal,
+      goal: args.goal ?? ledger?.state.goal,
       tasks: this.store.listTasks(this.sessionId),
       decisions: ledger?.state.decisions ?? [],
       changedFiles: ledger?.state.workingFiles ?? args.changedFiles ?? [],

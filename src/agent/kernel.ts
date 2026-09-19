@@ -62,6 +62,7 @@ export class PiAgentKernel {
   get lastManifest(){ return this.manifests.at(-1); }
   get runState(){ return this.runController.harness?.state; }
   get runId(){ return this.runController.runId; }
+  get currentGoalForCheckpoint(){ return this.currentGoal; }
   get transcriptRef(){ return this.session?.sessionManager.getLeafId()??undefined; }
   async branchTranscript(ref:string):Promise<void>{
     const session=this.current;
@@ -118,6 +119,7 @@ export class PiAgentKernel {
     );
     await continuity.createCheckpoint({
       transcriptRef:event?.branchEntries?.at?.(-1)?.id,
+      goal:this.currentGoal,
       nextAction:"continue after compaction",
       changedFiles:this.workingSet.list().filter(x=>x.status!=="STALE").map(x=>({path:x.path,hash:x.sourceHash})),
     });

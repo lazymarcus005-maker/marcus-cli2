@@ -7,7 +7,7 @@ Status: **implementation hardening complete locally; production V1 release gate 
 - macOS arm64 on Apple M4 Pro / 48 GiB.
 - Node 22.19.0 target-runtime CLI launch.
 - npm typecheck, lint and build pass on Node 22.19.0 after the architecture improvements.
-- Vitest: 134 passed tests + 1 live-only skipped test across 76 files pass on Node 22.19.0.
+- Vitest: 136 passed tests + 1 live-only skipped test across 76 files pass on Node 22.19.0.
 - Current clean dependency install: 228 packages installed; `npm audit --audit-level=low` found 0 vulnerabilities.
 - Current tarball installation passed `macus --help` and `macus --json` status startup from a separate install prefix; its executable has the Node shebang.
 - Installed tarball E2E against a local OpenAI-compatible endpoint passed end to end: provider tool call, fixture `npm test`, fresh passing trusted evidence, exit 0.
@@ -18,7 +18,7 @@ Status: **implementation hardening complete locally; production V1 release gate 
 - CI workflow defines Ubuntu + macOS Node 22.19.0 matrix.
 - Pi nested tool-turn/request interception integration passes against deterministic mock endpoint.
 - Provider runtime, durable continuity, verification assessment, typed tool-result coordination and CLI application boundary tests pass.
-- CLI end-to-end tests pass for unverified workspace edits returning exit 3 and a trusted `run_command` test recording fresh passing evidence.
+- CLI end-to-end tests pass for normal-mode verification exit codes, unverified workspace edits returning exit 3, and a trusted `run_command` test recording fresh passing evidence.
 - effective context stale-source replacement integration passes.
 - durable session resume integration passes.
 - compaction cancellation integration passes.

@@ -31,8 +31,8 @@ Post-review hardening status, 2026-09-19.
 
 ## Regression gate
 
-- Current runtime: **134 passed tests + 1 live-only skipped test across 76 files**.
-- Node 22.19.0: **134 passed tests + 1 live-only skipped test across 76 files**.
+- Current runtime: **136 passed tests + 1 live-only skipped test across 76 files**.
+- Node 22.19.0: **136 passed tests + 1 live-only skipped test across 76 files**.
 - Typecheck, lint and build: passed.
 - npm audit: 0 known vulnerabilities.
 - TypeSafe direct live transport and installed-package Jev shadow integration: passed.

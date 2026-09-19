@@ -114,7 +114,7 @@ The following all return control to Marcus without failing the coding run:
 Latest normal regression result after the TypeSafe transport defaults were fixed:
 
 ```text
-134 passed
+136 passed
 1 live-only test skipped
 76 total test files
 75 passed files

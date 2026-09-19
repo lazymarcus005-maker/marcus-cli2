@@ -206,7 +206,7 @@ export class CliApplication {
     const started = performance.now();
     const continuity = this.continuity(sessionId);
     const transcriptRef = this.kernel?.transcriptRef ?? this.pendingTranscriptRef ?? currentTranscriptRef(this.root, sessionId);
-    const checkpoint = await continuity.createCheckpoint({ transcriptRef });
+    const checkpoint = await continuity.createCheckpoint({ transcriptRef, goal: this.kernel?.currentGoalForCheckpoint });
     this.store.recordMetric({ sessionId, name: "checkpoint.create_ms", value: performance.now() - started });
     return checkpoint;
   }

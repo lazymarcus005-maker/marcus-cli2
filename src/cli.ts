@@ -87,8 +87,8 @@ async function main(): Promise<void> {
       const result = await runPrompt(parsed.prompt);
       if (parsed.json) {
         output.write(JSON.stringify(await app.buildJsonEnvelope(result), null, 2) + "\n");
-        process.exitCode = result.ok ? await app.verificationExitCode(result.runId) : errorExitCode(result.error);
       }
+      process.exitCode = result.ok ? await app.verificationExitCode(result.runId) : errorExitCode(result.error);
       return;
     }
 
