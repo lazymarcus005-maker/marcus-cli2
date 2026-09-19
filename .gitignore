@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+.macus/state/
+.macus/sessions/
+.macus/cache/
+.macus/checkpoints/
+.macus/logs/
+.macus/metrics/
+coverage/

@@ -1,0 +1,57 @@
+schema_version: 1
+models:
+  default: primary
+  providers:
+    private_gateway:
+      protocol: openai-compatible
+      base_url: ${MACUS_MODEL_BASE_URL}
+      api_key_env: MACUS_MODEL_API_KEY
+      profile: standard
+      model: your-model-id
+  aliases:
+    primary: private_gateway
+model_profiles:
+  standard:
+    context_window: 131072
+    max_output_tokens: 8192
+    tokenizer: conservative-byte-estimate
+
+internal_models:
+  jev:
+    enabled: false
+    transport: openrouter
+    model: typesafe/jev-1.13
+    api_key_env: OPENROUTER_API_KEY
+    timeout_ms: 1500
+    max_state_tokens: 8000
+    mode: shadow
+    decisions:
+      failure_triage: true
+      progress_judge: true
+      review_risk: true
+      stage_router: false
+      context_rerank: false
+      compaction_filter: false
+context:
+  reserved_output_tokens: 8192
+  safety_margin_tokens: 2048
+  target_prompt_ratio: 0.55
+  compact_prompt_ratio: 0.72
+  emergency_prompt_ratio: 0.85
+  budget:
+    repo_map_tokens: 1200
+    search_results_tokens: 2500
+    tool_output_tokens: 5000
+    single_file_read_tokens: 8000
+features:
+  repo_map: true
+  code_graph: false
+  context_ledger: true
+  checkpoint: true
+  auto_compaction: true
+  git_context: true
+  task_engine: true
+  prompt_cache_optimization: true
+  semantic_search: false
+  telemetry: false
+  jev_harness: false
